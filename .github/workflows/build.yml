@@ -18,14 +18,21 @@ on:
 
 jobs:
   build:
-    name: Atian Tools Build
+    name: ACTS (Windows)
     runs-on: windows-latest
+    strategy:
+      matrix:
+        cfg:
+          - Release
+          - Debug
+        platform:
+          - x64
     steps:
       - uses: actions/checkout@v3.5.3
         with:
           submodules: true
       - name: Add msbuild to PATH
-        uses: microsoft/setup-msbuild@v2
+        uses: microsoft/setup-msbuild@v1.3.1
         with:
           msbuild-architecture: x64
       - name: Get version
@@ -34,56 +41,25 @@ jobs:
         run: "\"version=$(scripts/getversion.ps1)\" | Out-File $env:GITHUB_OUTPUT"
       - name: Version
         run: "\"version: ${{ steps.get_version.outputs.version }}\""
-      - name: Install LLVM Clang
-        uses: KyleMayes/install-llvm-action@v2.0.9
+      - name: Setup premake5
+        uses: abel0b/setup-premake@v2.3
         with:
-          version: "22.1.7"
-          force-url: "https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.7/LLVM-22.1.7-win64.exe"
-      - name: Install Qt
-        uses: jurplel/install-qt-action@v4
-        # only install qt in shared context
-        with:
-          version: "6.11.0"
-          host: "windows"
-          target: "desktop"
-          arch: "win64_msvc2022_64"
-          cache: true
-          use-official: true
-          email: ${{ secrets.QT_EMAIL }}
-          pw: ${{ secrets.QT_PASSWORD }}
-      # Install Khronos OpenCL SDK (headers + .lib only, no OpenCL.dll)
-      - name: Install OpenCL SDK
-        shell: pwsh
-        run: |
-          Invoke-WebRequest -Uri "https://github.com/KhronosGroup/OpenCL-SDK/releases/download/v2025.07.23/OpenCL-SDK-v2025.07.23-Win-x64.zip" -OutFile "OpenCL-SDK.zip"
-          Expand-Archive OpenCL-SDK.zip -DestinationPath OpenCL-SDK
-
-          Write-Host "OpenCL_ROOT=$env:GITHUB_WORKSPACE/OpenCL-SDK/OpenCL-SDK-v2025.07.23-Win-x64"
-          Write-Host "OpenCL_INCLUDE_DIR=$env:GITHUB_WORKSPACE/OpenCL-SDK/OpenCL-SDK-v2025.07.23-Win-x64/include"
-          Write-Host "OpenCL_LIBRARY=$env:GITHUB_WORKSPACE/OpenCL-SDK/OpenCL-SDK-v2025.07.23-Win-x64/lib/OpenCL.lib"
-
-          Add-Content -Path $env:GITHUB_ENV -Value "OpenCL_ROOT=$env:GITHUB_WORKSPACE/OpenCL-SDK/OpenCL-SDK-v2025.07.23-Win-x64"
-          Add-Content -Path $env:GITHUB_ENV -Value "OpenCL_INCLUDE_DIR=$env:GITHUB_WORKSPACE/OpenCL-SDK/OpenCL-SDK-v2025.07.23-Win-x64/include"
-          Add-Content -Path $env:GITHUB_ENV -Value "OpenCL_LIBRARY=$env:GITHUB_WORKSPACE/OpenCL-SDK/OpenCL-SDK-v2025.07.23-Win-x64/lib/OpenCL.lib"
+          version: "5.0.0-beta2"
       - name: Create project
         shell: pwsh
-        run: |
-          . "$env:LLVM_PATH/bin/clang-format.exe" --version
-          scripts/setupdater.ps1 -versionEndpoint "https://github.com/${{ github.repository }}/releases/latest/download/version" -zipEndpoint "https://github.com/${{ github.repository }}/releases/latest/download/acts.zip" -projectUrl "https://github.com/${{ github.repository }}" -project "${{ github.repository }}" 
-          scripts/setup.ps1 -ci -clangFormatPath "$env:LLVM_PATH/bin/clang-format.exe"
-      - name: Validate project format
-        run: cmake --build build --target check-format
+        run: scripts/setup.ps1 -ci
       - name: Build project
         shell: pwsh
-        run: msbuild build/AtianCodTools.slnx /p:Configuration=Release /p:Platform=x64
+        run: msbuild build/AtianCodTools.sln /p:Configuration=${{matrix.cfg}} /p:Platform=${{matrix.platform}}
       - name: Run tests
-        run: build/bin/Release/acts.exe --noUpdater -l p -d -t utest
+        run: build/bin/acts.exe -l p -d -t utest
       - name: Package project
+        if: matrix.cfg == 'Release'
         shell: pwsh
-        run: scripts/package.ps1 -deployQt
+        run: scripts/package.ps1
       - name: Upload dev release
-        if: github.ref == 'refs/heads/main'
         uses: ncipollo/release-action@v1
+        if: matrix.cfg == 'Release' && github.ref == 'refs/heads/main'
         with:
           commit: ${{ github.sha }}
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -97,7 +73,7 @@ jobs:
           name: "Dev build ${{ steps.get_version.outputs.version }}"
           body: "Latest dev build, [get the latest release build here](https://github.com/${{ github.repository }}/releases/latest)."
       - name: Upload release
-        if: inputs.release && github.ref == 'refs/heads/main'
+        if: inputs.release && matrix.cfg == 'Release' && github.ref == 'refs/heads/main'
         uses: ncipollo/release-action@v1
         with:
           commit: ${{ github.sha }}
