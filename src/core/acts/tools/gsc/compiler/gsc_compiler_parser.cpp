@@ -419,6 +419,11 @@ namespace tool::gsc::compiler {
             if (gvarIt != fobj.m_vmInfo->globalvars.end()) {
                 GlobalVariableDef& gv = gvarIt->second;
 
+                if (gv.refOpCode != OPCODE_Undefined) {
+                    fobj.AddNode(term, new AscmNodeOpCode(gv.refOpCode));
+                    return true;
+                }
+
                 obj.info.PrintLineMessage(
                     core::logs::LVL_WARNING,
                     term,
